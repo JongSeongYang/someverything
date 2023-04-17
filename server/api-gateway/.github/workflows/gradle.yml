@@ -1,0 +1,72 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+# This workflow will build a Java project with Gradle and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-gradle
+
+name: API Gateway(Spring Boot, Java CI with Gradle)
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+    
+# 해당 yml 내에서 사용할 key - value
+env:
+  S3_BUCKET_NAME: deploy-project-bucket
+  PROJECT_NAME: api-gateway
+  CODE_DEPLOY_APPLICATION_NAME: someverything-app
+  CODE_DEPLOY_DEPLOYMENT_GROUP_NAME: someverything-codedeploy-group
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up JDK 11
+      uses: actions/setup-java@v3
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+      shell: bash
+      
+    - name: Build with Gradle
+      run : ./gradlew clean build --exclude-task test
+      
+    - name: Make zip file
+      run: zip -r ./$GITHUB_SHA.zip .
+      shell: bash
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+      
+    # S3에 업로드
+    - name: Upload to S3
+      run: |
+        aws deploy push \
+              --application-name ${{ env.CODE_DEPLOY_APPLICATION_NAME }} \
+              --s3-location s3://$S3_BUCKET_NAME/$GITHUB_SHA.zip \
+              --ignore-hidden-files \
+              --source .
+#      run: aws s3 cp --region ap-northeast-2 --acl private ./$GITHUB_SHA.zip s3://$S3_BUCKET_NAME/$PROJECT_NAME/$GITHUB_SHA.zip
+
+    - name: Code Deploy #4 # Code Deploy
+      run: |
+        aws deploy create-deployment \
+                  --application-name ${{ env.CODE_DEPLOY_APPLICATION_NAME }} \
+                  --deployment-config-name CodeDeployDefault.AllAtOnce \
+                  --deployment-group-name ${{ env.CODE_DEPLOY_DEPLOYMENT_GROUP_NAME }} \
+                  --s3-location bucket=$S3_BUCKET_NAME,key=$GITHUB_SHA.zip,bundleType=zip

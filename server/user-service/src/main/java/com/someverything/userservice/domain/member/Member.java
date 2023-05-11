@@ -21,5 +21,5 @@ public class MemberEntity {
     private String nickName;
     private String accessToken;
     private String email;
-
+    private String joinPathCode;
 }
